@@ -1,0 +1,13 @@
+<launch>
+
+	<node name="rosaria" pkg="rosaria" type="RosAria" >
+		<param name="_port" 
+			   value="/dev/ttyS0" />
+	</node> 
+
+	<node name="sicklms" pkg="sicktoolbox_wrapper" type="sicklms" >
+		<param name="_port" 
+			   value="/dev/ttyS1" />
+	</node>
+
+</launch>
