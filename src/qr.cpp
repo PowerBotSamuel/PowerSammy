@@ -255,6 +255,7 @@ void qrDataReceived(std_msgs::String msg)
 		std::string qr_msg;
 		if(msg.data == std::string(""))
 		{
+			
 			static int dir = 1;
 			if(cameraPos > 4.25) dir = -1;
 			else if(cameraPos < 1.35) dir = 1;
@@ -292,10 +293,17 @@ void qrDataReceived(std_msgs::String msg)
 			}
 			else if(msg.data == std::string("C"))
 			{ 
-				distToMove = 1;
+				distToMove = 0.75;
 				angToMove = -135;
 				angToMoveFinal = 0;
 			}
+			else if(msg.data == std::string("A"))
+			{
+				distToMove = 1;
+				angToMove = -90;
+				angToMoveFinal = 0;
+			}
+
 			else
 			{ 
 				distToMove = 0;

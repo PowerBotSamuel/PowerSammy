@@ -47,7 +47,7 @@ double targetAng = 0;     // docelowy kat przy obracaniu sie (stopnie)
 double initAng = 0;         // poczatkowy kat przy obracaniu sie (stopnie)
 
 double cameraPos = 2.79;
-double cameraVel = 0.2;
+double cameraVel = 0;
 double cameraTriggerPos = 0;
 
 double rangeM15 = -100;
@@ -111,7 +111,7 @@ void poseDataReceived(nav_msgs::Odometry msg)
 	double currY = msg.pose.pose.position.y;
 
 
-	if(status == 1) 
+	if(status == 1) // obrot do pozycji glowy i glowy w bok
 	{
 		// zapisz poczatkowe wspolrzedne
 		initX = msg.pose.pose.position.x;
@@ -123,6 +123,10 @@ void poseDataReceived(nav_msgs::Odometry msg)
 	    while(mabs(targetAng) > 180)
 			targetAng += 360*((targetAng>0)?-1:1);
 
+		std_msgs::Float64 cameraTarget;
+		cameraTarget.data = (cameraTriggerPos > 0)?3.665:1.2217;
+		cameraPub.publish(cameraTarget);
+
 		// nastaw timer, 5s + 10s na każde 90 stopni obrotu
 		double maxRotationTime = 5 + mabs(angToMove)*10/90;
 		timeoutTimer.stop();
@@ -130,7 +134,7 @@ void poseDataReceived(nav_msgs::Odometry msg)
 		timeoutTimer.start();
 		status = 2;
 	}
-	else if(status == 2) // obrot do zadanego kata
+	else if(status == 2) // obrot do pozycji glowy
 	{
 		ROS_INFO_STREAM("CURR:");
 		ROS_INFO_STREAM(currAng);
@@ -167,7 +171,7 @@ void poseDataReceived(nav_msgs::Odometry msg)
 		
 		
 	}
-	else if(status == 3) 
+	else if(status == 3) // obrot do prostopadlosci sciany
 	{
 		double diff = mabs(rangeP15) - mabs(rangeM15);
 		ROS_INFO_STREAM("DIFF:");
@@ -197,10 +201,65 @@ void poseDataReceived(nav_msgs::Odometry msg)
 			//timeoutTimer.setPeriod(ros::Duration(maxMoveTime));
 			//timeoutTimer.start();
 			
-			status = 999;
+			status = 4;
 		}
 		
 		
+	}
+	
+	else if(status == 4) // obrot 90 stopni
+	{
+		// zapisz poczatkowe wspolrzedne
+		initX = msg.pose.pose.position.x;
+		initY = msg.pose.pose.position.y;
+		initAng = currAng;
+		// oblicz docelowy kat, sprowadz do zakresu (-180 : 180)
+		targetAng  = initAng + (90*kierunek);
+	    while(mabs(targetAng) > 180)
+			targetAng += 360*((targetAng>0)?-1:1);
+
+		
+		status = 5;
+	}
+	else if(status == 5) // obrot 90 stopni
+	{
+		ROS_INFO_STREAM(status);
+    	ROS_INFO_STREAM("CURR:");
+		ROS_INFO_STREAM(currAng);
+		ROS_INFO_STREAM("TARGET:");
+		ROS_INFO_STREAM(targetAng);
+		ROS_INFO_STREAM("DIFF:");
+		ROS_INFO_STREAM(mabs(targetAng - currAng));
+		geometry_msgs::Twist vel;
+	    vel.linear.x = vel.linear.y = vel.linear.z = 0;
+		vel.angular.x = vel.angular.y = vel.angular.z = 0;
+		
+		if(mabs(targetAng - currAng) > 1) // dopoki roznica > 1 stopnien
+		{
+			vel.angular.z = 0.5;
+			if(kierunek == 1) vel.angular.z = -1*vel.angular.z;
+			if(mabs(targetAng - currAng) < 30)
+				vel.angular.z = vel.angular.z*(mabs(targetAng - currAng)/30);
+			ROS_INFO_STREAM("VEL:");
+			ROS_INFO_STREAM(vel.angular.z);
+			velocityPub.publish(vel);
+		}
+		else
+		{
+			stopMove();			
+			status = 6;
+		}
+		
+		
+	}
+	else if(status == 6) // do przodu
+	{
+	    geometry_msgs::Twist vel;
+	    vel.linear.x = vel.linear.y = vel.linear.z = 0;
+		vel.angular.x = vel.angular.y = vel.angular.z = 0;
+		vel.linear.x = 0.1;
+		velocityPub.publish(vel);
+		status = 7;
 	}
 	/*
 	if(status == 1)
@@ -231,7 +290,7 @@ void poseDataReceived(nav_msgs::Odometry msg)
 		}*/
 
 	
-	if(status == 101) 
+	if(status == 8) // ruch QR: inicjalizacja
 	{
 		// zapisz poczatkowe wspolrzedne
 		initX = msg.pose.pose.position.x;
@@ -248,9 +307,9 @@ void poseDataReceived(nav_msgs::Odometry msg)
 		timeoutTimer.stop();
 		timeoutTimer.setPeriod(ros::Duration(maxRotationTime));
 		timeoutTimer.start();
-		status = 2;
+		status = 9;
 	}
-	else if(status == 102) // obrot do zadanego kata
+	else if(status == 9) // ruch QR: obrot do zadanego kata
 	{
 		ROS_INFO_STREAM("CURR:");
 		ROS_INFO_STREAM(currAng);
@@ -282,11 +341,11 @@ void poseDataReceived(nav_msgs::Odometry msg)
 			timeoutTimer.setPeriod(ros::Duration(maxMoveTime));
 			timeoutTimer.start();
 			
-			status = 3;
+			status = 10;
 		}
 		
 	}
-	else if(status == 103)
+	else if(status == 10) // ruch QR: do przodu
 	{
 		// oblicz ile aktualnie przejechane
 		double distX = initX - currX;
@@ -324,16 +383,13 @@ void poseDataReceived(nav_msgs::Odometry msg)
 			{
 				stopMove();
 				status = 0;
-				std_msgs::Float64 msg;
-				msg.data = 6;
-				cameraPub.publish(msg);
 			}
 			else
 			{
 				angToMove = angToMoveFinal;
 				angToMoveFinal = 0;
 				distToMove = 0;
-				status = 1;
+				status = 8;
 				}
 			/*stopMove();
 			double data = 2.79253 + angToMoveFinal*360/(2*3.14);
@@ -380,12 +436,14 @@ void qrDataReceived(std_msgs::String msg)
 		std::string qr_msg;
 		if(msg.data == std::string(""))
 		{
+			ROS_INFO_STREAM(cameraPos);
+			ROS_INFO_STREAM(cameraVel);
 			static int dir = 1;
 			if(cameraPos > 4.25) dir = -1;
 			else if(cameraPos < 1.35) dir = 1;
 
 			double targetPos;
-			if(mabs(cameraVel) < 0.075)
+			if(mabs(cameraVel) < 0.05)
 			{
 				targetPos = (dir == 1)?4.5:1;
 				std_msgs::Float64 posMsg;
@@ -397,8 +455,10 @@ void qrDataReceived(std_msgs::String msg)
 		{
 
 			cameraTriggerPos = (cameraPos - 2.79)*360/(2*3.14);
+			kierunek = (cameraTriggerPos < 0)?1:-1;
 			ROS_INFO_STREAM("OBROT KAMERY NA QR");
 			ROS_INFO_STREAM(cameraTriggerPos);
+			ROS_INFO_STREAM(kierunek);
 			std_msgs::Float64 posMsg;			
 			//posMsg.data = cameraPos;
 			posMsg.data = 2.79;
@@ -406,40 +466,52 @@ void qrDataReceived(std_msgs::String msg)
 			status = 1;
 			
 			/*
-			if(msg.data == std::string("D"))
-			{ 
-				distToMove = 2.15;
-				angToMove = -120;
-				angToMoveFinal = 30;	
-			}
-			else if(msg.data == std::string("B"))
-			{ 
-				distToMove = 2;
-				angToMove = 180;
-				angToMoveFinal = 45;
-			}
-			else if(msg.data == std::string("C"))
-			{ 
-				distToMove = 1;
-				angToMove = -135;
-				angToMoveFinal = 0;
-			}
-			else
-			{ 
-				distToMove = 0;
-				angToMove = 0;
-				angToMoveFinal = 0;
+			*/
+		}
+	}
+	else if(status == 7)
+	{
+		cameraTriggerPos = (cameraPos - 2.79)*360/(2*3.14);
+		
+		if(msg.data == std::string("D"))
+		{ 
+			distToMove = 2.15;
+			angToMove = -120;
+			angToMoveFinal = 30;	
+		}
+		else if(msg.data == std::string("B"))
+		{ 
+			distToMove = 2;
+			angToMove = 180;
+			angToMoveFinal = 45;
+		}
+		else if(msg.data == std::string("C"))
+		{ 
+			distToMove = 1;
+			angToMove = -135;
+			angToMoveFinal = 0;
+		}
+		else if(msg.data == std::string("A"))
+		{
+			distToMove = 1;
+			angToMove = -90;
+			angToMoveFinal = 0;
+		}
+		else
+		{ 
+			distToMove = 0;
+			angToMove = 0;
+			angToMoveFinal = 0;
    
-			}
-			if((distToMove != 0)&&(angToMove!=0))
-			{
-				ROS_INFO_STREAM("ZADANE");
-				ROS_INFO_STREAM(angToMove);
-				angToMove = angToMove - cameraTriggerPos;
-				ROS_INFO_STREAM("NOWE");
-				ROS_INFO_STREAM(angToMove);
-				status = 1;
-				}*/
+		}
+		if((distToMove != 0)&&(angToMove!=0))
+		{
+			ROS_INFO_STREAM("ZADANE");
+			ROS_INFO_STREAM(angToMove);
+			angToMove = angToMove - cameraTriggerPos;
+			ROS_INFO_STREAM("NOWE");
+			ROS_INFO_STREAM(angToMove);
+			status = 8;
 		}
 	}
 }
